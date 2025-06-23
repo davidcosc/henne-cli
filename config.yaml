@@ -1,8 +1,8 @@
 questions:
   - type: text
     name: Nennspannung
-    message: "Nennspannung?"
-    validate: '^(9[6-9]|10[0-9]|11[0-9]|12[0-3])kv$'
+    message: "Nennspannung? (Format: 96kV bis 123kV)"
+    validate: '^(9[6-9]|10[0-9]|11[0-9]|12[0-3])kV$'
   - type: select
     name: Einspeisungsart
     message: "Einspeisungsart?"
@@ -10,9 +10,6 @@ questions:
       - einseitig
       - beidseitig
   - type: text
-    name: UWs
-    message: "Versorgte UWs?"
-    validate: '^(SE|EE|N)(,(SE|EE|N))*$'
-  - type: text
-    name: Last
-    message: "Last der UWs?"
+    name: UWLastPaare
+    message: "Versorgte UWs mit Last? (Format: SE=15MW,N=20MW,...)"
+    validate: '^(SE|EE|N)=\d+(\.\d+)?MW(,(SE|EE|N)=\d+(\.\d+)?MW)*$'

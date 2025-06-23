@@ -226,7 +226,33 @@ def get_user_settings(settings_path):
     return ask_questions(questions)
 
 
+def parse_uw_last_pairs(answers):
+    """
+    Parse the combined input from a single text field containing UW=Last pairs.
+
+    For example: "SE=15MW,N=20MW" -> [{"type": "SE", "last": "15MW"}, {"type": "N", "last": "20MW"}]
+
+    Args:
+        answers (dict): Dictionary containing user input with key 'UWLastPaare'.
+
+    Returns:
+        list[dict]: A list of dictionaries with keys 'type' and 'last' for each UW.
+    """
+    pairs = answers["UWLastPaare"].split(",")
+    ordered_uws = []
+
+    for pair in pairs:
+        uw = {}
+        uw_type, last = pair.split("=")
+        uw["type"] = uw_type
+        uw["last"] = last
+        ordered_uws.append(uw)
+
+    return ordered_uws
+
+
 # Example usage
 if __name__ == "__main__":
     answers = get_user_settings("config.yaml")
+    answers["UWs"] = parse_uw_last_pairs(answers)
     print(answers)
