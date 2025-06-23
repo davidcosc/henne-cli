@@ -1,0 +1,10 @@
+questions:
+  - type: confirm
+    name: elektrika
+    message: "Sind sie ein intellenta Elektrika?"
+  - type: select
+    name: language
+    message: "Was willst du tun?"
+    choices:
+      - Phase inne Nase
+      - Neutral fatal
