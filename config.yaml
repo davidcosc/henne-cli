@@ -1,10 +1,18 @@
 questions:
-  - type: confirm
-    name: elektrika
-    message: "Sind sie ein intellenta Elektrika?"
+  - type: text
+    name: Nennspannung
+    message: "Nennspannung?"
+    validate: '^(9[6-9]|10[0-9]|11[0-9]|12[0-3])kv$'
   - type: select
-    name: language
-    message: "Was willst du tun?"
+    name: Einspeisungsart
+    message: "Einspeisungsart?"
     choices:
-      - Phase inne Nase
-      - Neutral fatal
+      - einseitig
+      - beidseitig
+  - type: text
+    name: UWs
+    message: "Versorgte UWs?"
+    validate: '^(SE|EE|N)(,(SE|EE|N))*$'
+  - type: text
+    name: Last
+    message: "Last der UWs?"

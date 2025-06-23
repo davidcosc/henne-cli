@@ -1,25 +1,89 @@
 import questionary
 import sys
 import yaml
+import re
+from questionary import Validator, ValidationError
+
+
+class RegexValidator(Validator):
+    """
+    A questionary Validator subclass that validates input against a regex pattern.
+    """
+
+    def __init__(self, pattern):
+        """
+        Initialize the validator with a regex pattern.
+
+        Args:
+            pattern (str): A regex pattern string to validate input against.
+        """
+        self.pattern = re.compile(pattern)
+
+    def validate(self, document):
+        """
+        Check if the input matches the regex pattern.
+
+        Args:
+            document (questionary.Document): The input document to validate.
+
+        Raises:
+            ValidationError: If the input does not fully match the regex pattern.
+        """
+        if not self.pattern.fullmatch(document.text):
+            raise ValidationError(
+                message="Input does not match the required format.",
+                cursor_position=len(document.text)  # Move cursor to end of input
+            )
+
+
+def read_config(config_path):
+    """
+    Load and parse a YAML configuration file.
+
+    Args:
+        config_path (str): Path to the YAML config file.
+
+    Returns:
+        dict: Parsed YAML content as a Python dictionary.
+
+    Exits:
+        On file not found or YAML parsing error, prints an error and exits the program.
+    """
+    try:
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        questionary.print(f"\n[ERROR] File not found: {config_path}", style="bold red")
+        sys.exit(1)
+    except yaml.YAMLError as e:
+        questionary.print("\n[ERROR] Invalid YAML syntax:", style="bold red")
+        questionary.print(str(e), style="italic red")
+        sys.exit(1)
+    return config
+
 
 def validate_question_schema(question, index):
     """
-    Validate a single question dictionary.
+    Validate the schema of a single question dictionary.
+
+    Checks for required fields, supported types, choices for selects,
+    and validity of regex patterns for text questions.
 
     Args:
-        question (dict): The question to validate.
-        index (int): The index of the question for error display.
+        question (dict): The question dictionary to validate.
+        index (int): The question's 1-based index (for error reporting).
 
     Returns:
-        bool: True if valid, False otherwise.
+        bool: True if the question is valid, False otherwise.
     """
-    allowed_types = {"select", "confirm"}
+    allowed_types = {"select", "text"}
     valid = True
 
     q_type = question.get("type")
     name = question.get("name")
     message = question.get("message")
     choices = question.get("choices")
+    validate_pattern = question.get("validate")
 
     # Check required fields
     if not all([q_type, name, message]):
@@ -29,15 +93,15 @@ def validate_question_schema(question, index):
         )
         valid = False
 
-    # Check type support
+    # Check allowed types
     if q_type not in allowed_types:
         questionary.print(
-            f"[WARNING] Question {index}: Unsupported type '{q_type}'. Only 'select' and 'confirm' are allowed.",
+            f"[WARNING] Question {index}: Unsupported type '{q_type}'. Only 'select' and 'text' are allowed.",
             style="yellow"
         )
         valid = False
 
-    # Check choices for select
+    # Check choices for select questions
     if q_type == "select":
         if not isinstance(choices, list) or not choices:
             questionary.print(
@@ -46,38 +110,40 @@ def validate_question_schema(question, index):
             )
             valid = False
 
+    # Validate regex pattern if provided for text questions
+    if q_type == "text" and validate_pattern is not None:
+        try:
+            re.compile(validate_pattern)
+        except re.error:
+            questionary.print(
+                f"[WARNING] Question {index}: Invalid regex pattern in 'validate': {validate_pattern}",
+                style="yellow"
+            )
+            valid = False
+
     return valid
 
 
-def load_questions_from_yaml(yaml_path):
+def validate_config(config):
     """
-    Load a YAML file and generate a list of validated questionary prompt objects.
+    Validate the overall configuration dictionary.
 
-    Returns only prompts of type 'select' and 'confirm'.
+    Ensures 'questions' key exists and contains a list,
+    and that each question passes individual schema validation.
 
     Args:
-        yaml_path (str): Path to the YAML file.
+        config (dict): Parsed YAML configuration dictionary.
 
-    Returns:
-        list[questionary.Question]: A list of questionary prompts, or empty if validation fails.
+    Exits:
+        On missing or invalid 'questions' list or invalid questions,
+        prints an error and exits the program.
     """
-    try:
-        with open(yaml_path, "r") as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        questionary.print(f"\n[ERROR] File not found: {yaml_path}", style="bold red")
-        sys.exit(1)
-    except yaml.YAMLError as e:
-        questionary.print("\n[ERROR] Invalid YAML syntax:", style="bold red")
-        questionary.print(str(e), style="italic red")
-        sys.exit(1)
-
     questions = config.get("questions")
     if not isinstance(questions, list):
         questionary.print("\n[ERROR] YAML must contain a top-level 'questions' list.", style="bold red")
         sys.exit(1)
 
-    # Validate structure
+    # Validate each question
     all_valid = True
     for idx, q in enumerate(questions, start=1):
         if not validate_question_schema(q, idx):
@@ -86,58 +152,78 @@ def load_questions_from_yaml(yaml_path):
         questionary.print("\n[ERROR] One or more questions are invalid. Fix the YAML and try again.", style="bold red")
         sys.exit(1)
 
-    # Create prompts
-    prompts = []
-    for q in questions:
+
+def create_questions(config):
+    """
+    Create questionary prompt objects from validated configuration.
+
+    Supports 'select' and 'text' types, applying regex validation for text inputs
+    when a 'validate' pattern is specified.
+
+    Args:
+        config (dict): Validated YAML configuration dictionary.
+
+    Returns:
+        list[questionary.Question]: A list of questionary prompt objects.
+    """
+    question_configs = config.get("questions")
+    questions = []
+
+    for q in question_configs:
         q_type = q["type"]
         name = q["name"]
         message = q["message"]
         choices = q.get("choices", [])
+        validate_pattern = q.get("validate")
 
         if q_type == "select":
             question = questionary.select(message=message, choices=choices)
-        else:
-            question = questionary.confirm(message=message)
+        else:  # q_type == "text"
+            if validate_pattern:
+                validator = RegexValidator(validate_pattern)
+                question = questionary.text(message=message, validate=validator)
+            else:
+                question = questionary.text(message=message)
 
         question.name = name
-        prompts.append(question)
+        questions.append(question)
 
-    return prompts
+    return questions
 
 
-def ask_questions_and_get_answers(questions):
+def ask_questions(questions):
     """
-    Ask a list of questionary questions and collect answers.
+    Prompt the user with the given questions and collect answers.
 
     Args:
-        questions (list[questionary.Question]): The prompts to ask.
+        questions (list[questionary.Question]): List of questionary prompt objects.
 
     Returns:
-        dict: A dictionary of answers.
+        dict: A dictionary mapping question names to user responses.
     """
-    answers = []
+    answers = {}
 
-    for question in questions:
-        answers.append(question.ask())
+    for q in questions:
+        answer = q.ask()
+        answers[q.name] = answer
         
     return answers
 
 
 def get_user_settings(settings_path):
     """
-    Load questions from a YAML file, prompt the user, and return their responses.
-
-    This function loads a list of validated 'select' or 'confirm' questions from the specified
-    YAML file, prompts the user using questionary, and collects the answers.
+    Main function to load questions from YAML, validate, prompt user, and return answers.
 
     Args:
-        settings_path (str): Path to the YAML file containing the question configuration.
+        settings_path (str): Path to the YAML file containing question definitions.
 
     Returns:
-        list: A list of user responses, in the same order as the questions in the YAML file.
+        dict: User's answers keyed by question name.
     """
-    questions = load_questions_from_yaml(settings_path)
-    return ask_questions_and_get_answers(questions)
+    config = read_config(settings_path)
+    validate_config(config)
+    questions = create_questions(config)
+    return ask_questions(questions)
 
 
 # Example usage
